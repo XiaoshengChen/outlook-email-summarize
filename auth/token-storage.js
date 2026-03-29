@@ -5,17 +5,17 @@ const querystring = require('querystring');
 
 class TokenStorage {
   constructor(config) {
-    const tenantId = process.env.MS_TENANT_ID || 'common';
-    const authorityHost = (process.env.MS_AUTHORITY_HOST || 'https://login.microsoftonline.com').replace(/\/+$/, '');
+    const tenantId = process.env.OUTLOOK_TENANT_ID || process.env.MS_TENANT_ID || 'common';
+    const authorityHost = (process.env.OUTLOOK_AUTHORITY_HOST || process.env.MS_AUTHORITY_HOST || 'https://login.microsoftonline.com').replace(/\/+$/, '');
 
     this.config = {
       tokenStorePath: path.join(process.env.HOME || process.env.USERPROFILE, '.outlook-mcp-tokens.json'),
-      clientId: process.env.MS_CLIENT_ID,
-      clientSecret: process.env.MS_CLIENT_SECRET,
-      redirectUri: process.env.MS_REDIRECT_URI || 'http://localhost:3333/auth/callback',
-      scopes: (process.env.MS_SCOPES || 'offline_access User.Read Mail.Read').split(' '),
+      clientId: process.env.OUTLOOK_CLIENT_ID || process.env.MS_CLIENT_ID,
+      clientSecret: process.env.OUTLOOK_CLIENT_SECRET || process.env.MS_CLIENT_SECRET,
+      redirectUri: process.env.OUTLOOK_REDIRECT_URI || process.env.MS_REDIRECT_URI || 'http://127.0.0.1:3333/auth/callback',
+      scopes: (process.env.OUTLOOK_SCOPES || process.env.MS_SCOPES || 'offline_access User.Read Mail.Read').split(' '),
       tenantId,
-      tokenEndpoint: process.env.MS_TOKEN_ENDPOINT || `${authorityHost}/${tenantId}/oauth2/v2.0/token`,
+      tokenEndpoint: process.env.OUTLOOK_TOKEN_ENDPOINT || process.env.MS_TOKEN_ENDPOINT || `${authorityHost}/${tenantId}/oauth2/v2.0/token`,
       refreshTokenBuffer: 5 * 60 * 1000, // 5 minutes buffer for token refresh
       ...config // Allow overriding default config
     };
@@ -51,7 +51,10 @@ class TokenStorage {
       return false;
     }
     try {
-      await fs.writeFile(this.config.tokenStorePath, JSON.stringify(this.tokens, null, 2));
+      await fs.writeFile(this.config.tokenStorePath, JSON.stringify(this.tokens, null, 2), { mode: 0o600 });
+      if (fs.chmod) {
+        await fs.chmod(this.config.tokenStorePath, 0o600).catch(() => {});
+      }
       console.log('Tokens saved successfully.');
       // return true; // No longer returning boolean, will throw on error.
     } catch (error) {
@@ -246,8 +249,8 @@ class TokenStorage {
               reject(new Error(responseBody.error_description || `Token exchange failed with status ${res.statusCode}`));
             }
           } catch (e) { // Catch any error during parsing or saving
-            console.error('Error processing token exchange response or saving tokens:', e, "Raw data:", data);
-            reject(new Error(`Error processing token response: ${e.message}. Response data: ${data}`));
+            console.error('Error processing token exchange response or saving tokens:', e);
+            reject(new Error(`Error processing token response: ${e.message}`));
           }
         });
       });

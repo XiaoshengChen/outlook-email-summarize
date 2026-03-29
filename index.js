@@ -18,13 +18,17 @@ const { folderTools } = require('./folder');
 const { rulesTools } = require('./rules');
 const { onedriveTools } = require('./onedrive');
 const { powerAutomateTools } = require('./power-automate');
+const { filterEnabledTools } = require('./utils/feature-gates');
 
 // Log startup information
 console.error(`STARTING ${config.SERVER_NAME.toUpperCase()} MCP SERVER`);
 console.error(`Test mode is ${config.USE_TEST_MODE ? 'enabled' : 'disabled'}`);
+if (config.READ_ONLY_MODE && !config.ENABLE_UNSAFE_TOOLS) {
+  console.error('Read-only mode is enabled. Only email summary tools are exposed by default.');
+}
 
 // Combine all tools
-const TOOLS = [
+const ALL_TOOLS = [
   ...authTools,
   ...calendarTools,
   ...emailTools,
@@ -33,6 +37,7 @@ const TOOLS = [
   ...onedriveTools,
   ...powerAutomateTools
 ];
+const TOOLS = filterEnabledTools(ALL_TOOLS);
 
 // Create server with tools capabilities
 const server = new Server(

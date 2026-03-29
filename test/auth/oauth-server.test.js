@@ -67,15 +67,18 @@ describe('OAuth Server Routes', () => {
 
   describe('GET /auth/callback', () => {
     const mockAuthCode = 'mock_auth_code';
-    const mockState = 'mock_state_value'; // Example state
+    let issuedState;
+
+    beforeEach(async () => {
+      const response = await request(app).get('/auth');
+      const redirectUrl = new URL(response.headers.location);
+      issuedState = redirectUrl.searchParams.get('state');
+    });
 
     it('should exchange code for tokens and return success HTML', async () => {
       mockTokenStorageInstance.exchangeCodeForTokens.mockResolvedValue({ access_token: 'mock_access_token' });
 
-      // Note: State validation is mocked/skipped here as session management is outside this module.
-      // In a real app, the 'state' would be generated in /auth, stored (e.g. session),
-      // and verified here. The test passes 'state' to simulate it coming from provider.
-      const response = await request(app).get(`/auth/callback?code=${mockAuthCode}&state=${mockState}`);
+      const response = await request(app).get(`/auth/callback?code=${mockAuthCode}&state=${issuedState}`);
 
       expect(mockTokenStorageInstance.exchangeCodeForTokens).toHaveBeenCalledWith(mockAuthCode);
       expect(response.status).toBe(200);
@@ -85,7 +88,7 @@ describe('OAuth Server Routes', () => {
     it('should return 400 and error HTML if OAuth provider returns an error', async () => {
       const oauthError = 'access_denied';
       const oauthErrorDesc = 'User denied access';
-      const response = await request(app).get(`/auth/callback?error=${oauthError}&error_description=${oauthErrorDesc}&state=${mockState}`);
+      const response = await request(app).get(`/auth/callback?error=${oauthError}&error_description=${oauthErrorDesc}&state=${issuedState}`);
 
       expect(response.status).toBe(400);
       expect(response.text).toContain('Authorization Failed');
@@ -95,7 +98,7 @@ describe('OAuth Server Routes', () => {
     });
 
     it('should return 400 if no code is provided', async () => {
-      const response = await request(app).get(`/auth/callback?state=${mockState}`);
+      const response = await request(app).get(`/auth/callback?state=${issuedState}`);
       expect(response.status).toBe(400);
       expect(response.text).toContain('Authorization Failed');
       expect(response.text).toContain('Error:</strong> Missing Authorization Code');
@@ -133,11 +136,25 @@ describe('OAuth Server Routes', () => {
       const exchangeError = new Error('Token exchange process failed');
       mockTokenStorageInstance.exchangeCodeForTokens.mockRejectedValue(exchangeError);
 
-      const response = await request(app).get(`/auth/callback?code=${mockAuthCode}&state=${mockState}`);
+      const response = await request(app).get(`/auth/callback?code=${mockAuthCode}&state=${issuedState}`);
 
       expect(response.status).toBe(500);
       expect(response.text).toContain('Token Exchange Failed');
       expect(response.text).toContain(`Error:</strong> ${exchangeError.message}`);
+    });
+
+    it('should return 400 if state does not match the issued value', async () => {
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+
+      const response = await request(app).get(`/auth/callback?code=${mockAuthCode}&state=wrong-state`);
+
+      expect(response.status).toBe(400);
+      expect(response.text).toContain('Authorization Failed');
+      expect(response.text).toContain('Error:</strong> Invalid State Parameter');
+      expect(mockTokenStorageInstance.exchangeCodeForTokens).not.toHaveBeenCalled();
+      expect(consoleErrorSpy).toHaveBeenCalledWith('OAuth callback state mismatch. Rejecting request to prevent potential CSRF attack.');
+
+      consoleErrorSpy.mockRestore();
     });
   });
 

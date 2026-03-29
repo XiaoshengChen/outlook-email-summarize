@@ -1,0 +1,39 @@
+{
+  "name": "outlook-email-summarize",
+  "version": "0.1.0",
+  "description": "Read Outlook email safely through a minimal, read-only MCP server optimized for summarization.",
+  "author": {
+    "name": "XiaoshengChen",
+    "url": "https://github.com/XiaoshengChen/outlook-email-summarize"
+  },
+  "homepage": "https://github.com/XiaoshengChen/outlook-email-summarize",
+  "repository": "https://github.com/XiaoshengChen/outlook-email-summarize",
+  "license": "MIT",
+  "keywords": [
+    "outlook",
+    "email",
+    "mcp",
+    "openclaw",
+    "microsoft-graph"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Outlook Email Summarize",
+    "shortDescription": "Read and summarize Outlook inbox mail",
+    "longDescription": "A read-first Outlook bundle for OpenClaw. Uses Microsoft Graph with device code auth by default and only exposes safe inbox-reading tools unless you explicitly opt into unsafe mode.",
+    "developerName": "XiaoshengChen",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Read"
+    ],
+    "websiteURL": "https://github.com/XiaoshengChen/outlook-email-summarize",
+    "privacyPolicyURL": "https://learn.microsoft.com/legal/microsoft-privacy",
+    "termsOfServiceURL": "https://learn.microsoft.com/legal/microsoft-apis/terms-of-use",
+    "defaultPrompt": [
+      "Summarize the latest Outlook emails and flag what needs a reply"
+    ],
+    "brandColor": "#0078D4",
+    "screenshots": []
+  }
+}

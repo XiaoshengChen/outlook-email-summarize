@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "outlook-email-summarize": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["./index.js"],
+      "cwd": ".",
+      "env": {
+        "OUTLOOK_AUTH_MODE": "device_code",
+        "OUTLOOK_READ_ONLY_MODE": "true",
+        "OUTLOOK_ENABLE_UNSAFE_TOOLS": "false"
+      },
+      "note": "Read-only Outlook MCP bundle for inbox summarization. Provide OUTLOOK_CLIENT_ID and related env vars through ~/.openclaw/.env or the gateway environment."
+    }
+  }
+}
