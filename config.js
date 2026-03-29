@@ -6,6 +6,48 @@ const os = require('os');
 
 // Ensure we have a home directory path even if process.env.HOME is undefined
 const homeDir = process.env.HOME || process.env.USERPROFILE || os.homedir() || '/tmp';
+const DEFAULT_READ_ONLY_SCOPES = ['offline_access', 'User.Read', 'Mail.Read'];
+const DEFAULT_FULL_SCOPES = [
+  'offline_access',
+  'User.Read',
+  'Mail.Read',
+  'Mail.ReadWrite',
+  'Mail.Send',
+  'Calendars.Read',
+  'Calendars.ReadWrite',
+  'Files.Read',
+  'Files.ReadWrite'
+];
+
+function parseBoolean(value, defaultValue) {
+  if (value === undefined) {
+    return defaultValue;
+  }
+
+  return String(value).toLowerCase() === 'true';
+}
+
+function parseScopes(rawValue, fallbackScopes) {
+  const scopeString = typeof rawValue === 'string' ? rawValue.trim() : '';
+  if (!scopeString) {
+    return fallbackScopes;
+  }
+
+  return scopeString.split(/\s+/).filter(Boolean);
+}
+
+const READ_ONLY_MODE = parseBoolean(process.env.OUTLOOK_READ_ONLY_MODE, true);
+const AUTH_MODE = process.env.OUTLOOK_AUTH_MODE || 'device_code';
+const ENABLE_UNSAFE_TOOLS = parseBoolean(process.env.OUTLOOK_ENABLE_UNSAFE_TOOLS, false);
+const AUTH_HOST = process.env.OUTLOOK_AUTH_HOST || '127.0.0.1';
+const AUTH_PORT = Number(process.env.OUTLOOK_AUTH_PORT || 3333);
+const defaultScopes = READ_ONLY_MODE ? DEFAULT_READ_ONLY_SCOPES : DEFAULT_FULL_SCOPES;
+const TENANT_ID = process.env.OUTLOOK_TENANT_ID || process.env.MS_TENANT_ID || 'common';
+const AUTHORITY_HOST = (process.env.OUTLOOK_AUTHORITY_HOST || process.env.MS_AUTHORITY_HOST || 'https://login.microsoftonline.com').replace(/\/+$/, '');
+const configuredScopes = parseScopes(
+  process.env.OUTLOOK_SCOPES || process.env.MS_SCOPES,
+  defaultScopes
+);
 
 module.exports = {
   // Server information
@@ -14,15 +56,23 @@ module.exports = {
   
   // Test mode setting
   USE_TEST_MODE: process.env.USE_TEST_MODE === 'true',
+  READ_ONLY_MODE,
+  AUTH_MODE,
+  ENABLE_UNSAFE_TOOLS,
   
   // Authentication configuration
   AUTH_CONFIG: {
-    clientId: process.env.OUTLOOK_CLIENT_ID || '',
-    clientSecret: process.env.OUTLOOK_CLIENT_SECRET || '',
-    redirectUri: 'http://localhost:3333/auth/callback',
-    scopes: ['Mail.Read', 'Mail.ReadWrite', 'Mail.Send', 'User.Read', 'Calendars.Read', 'Calendars.ReadWrite', 'Files.Read', 'Files.ReadWrite'],
+    clientId: process.env.OUTLOOK_CLIENT_ID || process.env.MS_CLIENT_ID || '',
+    clientSecret: process.env.OUTLOOK_CLIENT_SECRET || process.env.MS_CLIENT_SECRET || '',
+    redirectUri: process.env.OUTLOOK_REDIRECT_URI || process.env.MS_REDIRECT_URI || `http://${AUTH_HOST}:${AUTH_PORT}/auth/callback`,
+    scopes: configuredScopes,
     tokenStorePath: path.join(homeDir, '.outlook-mcp-tokens.json'),
-    authServerUrl: 'http://localhost:3333'
+    authServerUrl: process.env.OUTLOOK_AUTH_SERVER_URL || `http://${AUTH_HOST}:${AUTH_PORT}`,
+    authServerHost: AUTH_HOST,
+    authServerPort: AUTH_PORT,
+    authEndpoint: process.env.OUTLOOK_AUTH_ENDPOINT || `${AUTHORITY_HOST}/${TENANT_ID}/oauth2/v2.0/authorize`,
+    deviceCodeEndpoint: process.env.OUTLOOK_DEVICE_CODE_ENDPOINT || `${AUTHORITY_HOST}/${TENANT_ID}/oauth2/v2.0/devicecode`,
+    tokenEndpoint: process.env.OUTLOOK_TOKEN_ENDPOINT || `${AUTHORITY_HOST}/${TENANT_ID}/oauth2/v2.0/token`
   },
   
   // Microsoft Graph API

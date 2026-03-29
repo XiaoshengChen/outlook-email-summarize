@@ -4,8 +4,34 @@
 const fs = require('fs');
 const config = require('../config');
 
-// Global variable to store tokens
 let cachedTokens = null;
+
+function normalizeTokens(tokens) {
+  if (!tokens || !tokens.access_token) {
+    return null;
+  }
+
+  const expiresAt = tokens.expires_at || (
+    typeof tokens.expires_in === 'number'
+      ? Date.now() + (tokens.expires_in * 1000)
+      : 0
+  );
+
+  return {
+    ...tokens,
+    expires_at: expiresAt
+  };
+}
+
+function writeJsonFile(filePath, payload) {
+  fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), { mode: 0o600 });
+
+  try {
+    fs.chmodSync(filePath, 0o600);
+  } catch (error) {
+    // Windows may ignore chmod semantics. That is fine.
+  }
+}
 
 /**
  * Loads authentication tokens from the token file
@@ -14,62 +40,24 @@ let cachedTokens = null;
 function loadTokenCache() {
   try {
     const tokenPath = config.AUTH_CONFIG.tokenStorePath;
-    console.error(`[DEBUG] Attempting to load tokens from: ${tokenPath}`);
-    console.error(`[DEBUG] HOME directory: ${process.env.HOME}`);
-    console.error(`[DEBUG] Full resolved path: ${tokenPath}`);
-    
-    // Log file existence and details
     if (!fs.existsSync(tokenPath)) {
-      console.error('[DEBUG] Token file does not exist');
       return null;
     }
-    
-    const stats = fs.statSync(tokenPath);
-    console.error(`[DEBUG] Token file stats:
-      Size: ${stats.size} bytes
-      Created: ${stats.birthtime}
-      Modified: ${stats.mtime}`);
-    
+
     const tokenData = fs.readFileSync(tokenPath, 'utf8');
-    console.error('[DEBUG] Token file contents length:', tokenData.length);
-    console.error('[DEBUG] Token file first 200 characters:', tokenData.slice(0, 200));
-    
-    try {
-      const tokens = JSON.parse(tokenData);
-      console.error('[DEBUG] Parsed tokens keys:', Object.keys(tokens));
-      
-      // Log each key's value to see what's present
-      Object.keys(tokens).forEach(key => {
-        console.error(`[DEBUG] ${key}: ${typeof tokens[key]}`);
-      });
-      
-      // Check for access token presence
-      if (!tokens.access_token) {
-        console.error('[DEBUG] No access_token found in tokens');
-        return null;
-      }
-      
-      // Check token expiration
-      const now = Date.now();
-      const expiresAt = tokens.expires_at || 0;
-      
-      console.error(`[DEBUG] Current time: ${now}`);
-      console.error(`[DEBUG] Token expires at: ${expiresAt}`);
-      
-      if (now > expiresAt) {
-        console.error('[DEBUG] Token has expired');
-        return null;
-      }
-      
-      // Update the cache
-      cachedTokens = tokens;
-      return tokens;
-    } catch (parseError) {
-      console.error('[DEBUG] Error parsing token JSON:', parseError);
+    const tokens = normalizeTokens(JSON.parse(tokenData));
+    if (!tokens) {
       return null;
     }
+
+    if (Date.now() >= tokens.expires_at) {
+      return null;
+    }
+
+    cachedTokens = tokens;
+    return tokens;
   } catch (error) {
-    console.error('[DEBUG] Error loading token cache:', error);
+    console.error('Error loading token cache:', error.message);
     return null;
   }
 }
@@ -81,18 +69,29 @@ function loadTokenCache() {
  */
 function saveTokenCache(tokens) {
   try {
-    const tokenPath = config.AUTH_CONFIG.tokenStorePath;
-    console.error(`Saving tokens to: ${tokenPath}`);
-    
-    fs.writeFileSync(tokenPath, JSON.stringify(tokens, null, 2));
-    console.error('Tokens saved successfully');
-    
-    // Update the cache
-    cachedTokens = tokens;
+    const normalizedTokens = normalizeTokens(tokens);
+    if (!normalizedTokens) {
+      return false;
+    }
+
+    writeJsonFile(config.AUTH_CONFIG.tokenStorePath, normalizedTokens);
+    cachedTokens = normalizedTokens;
     return true;
   } catch (error) {
-    console.error('Error saving token cache:', error);
+    console.error('Error saving token cache:', error.message);
     return false;
+  }
+}
+
+function clearTokenCache() {
+  cachedTokens = null;
+
+  try {
+    if (fs.existsSync(config.AUTH_CONFIG.tokenStorePath)) {
+      fs.unlinkSync(config.AUTH_CONFIG.tokenStorePath);
+    }
+  } catch (error) {
+    console.error('Error clearing token cache:', error.message);
   }
 }
 
@@ -101,7 +100,7 @@ function saveTokenCache(tokens) {
  * @returns {string|null} - The access token or null if not available
  */
 function getAccessToken() {
-  if (cachedTokens && cachedTokens.access_token) {
+  if (cachedTokens && cachedTokens.access_token && Date.now() < cachedTokens.expires_at) {
     return cachedTokens.access_token;
   }
 
@@ -117,11 +116,8 @@ function getFlowAccessToken() {
   const tokens = loadTokenCache();
   if (!tokens) return null;
 
-  // Check if flow token exists and is not expired
-  if (tokens.flow_access_token && tokens.flow_expires_at) {
-    if (Date.now() < tokens.flow_expires_at) {
-      return tokens.flow_access_token;
-    }
+  if (tokens.flow_access_token && tokens.flow_expires_at && Date.now() < tokens.flow_expires_at) {
+    return tokens.flow_access_token;
   }
 
   return null;
@@ -134,16 +130,7 @@ function getFlowAccessToken() {
  */
 function saveFlowTokens(flowTokens) {
   try {
-    const tokenPath = config.AUTH_CONFIG.tokenStorePath;
-
-    // Load existing tokens
-    let existingTokens = {};
-    if (fs.existsSync(tokenPath)) {
-      const tokenData = fs.readFileSync(tokenPath, 'utf8');
-      existingTokens = JSON.parse(tokenData);
-    }
-
-    // Merge flow tokens
+    const existingTokens = loadTokenCache() || {};
     const mergedTokens = {
       ...existingTokens,
       flow_access_token: flowTokens.access_token,
@@ -151,14 +138,11 @@ function saveFlowTokens(flowTokens) {
       flow_expires_at: flowTokens.expires_at || (Date.now() + (flowTokens.expires_in || 3600) * 1000)
     };
 
-    fs.writeFileSync(tokenPath, JSON.stringify(mergedTokens, null, 2));
-    console.log('Flow tokens saved successfully');
-
-    // Update cache
+    writeJsonFile(config.AUTH_CONFIG.tokenStorePath, mergedTokens);
     cachedTokens = mergedTokens;
     return true;
   } catch (error) {
-    console.error('Error saving Flow tokens:', error);
+    console.error('Error saving Flow tokens:', error.message);
     return false;
   }
 }
@@ -169,20 +153,22 @@ function saveFlowTokens(flowTokens) {
  */
 function createTestTokens() {
   const testTokens = {
-    access_token: "test_access_token_" + Date.now(),
-    refresh_token: "test_refresh_token_" + Date.now(),
-    expires_at: Date.now() + (3600 * 1000) // 1 hour
+    access_token: `test_access_token_${Date.now()}`,
+    refresh_token: `test_refresh_token_${Date.now()}`,
+    expires_at: Date.now() + (3600 * 1000)
   };
-  
+
   saveTokenCache(testTokens);
   return testTokens;
 }
 
 module.exports = {
-  loadTokenCache,
-  saveTokenCache,
+  clearTokenCache,
+  createTestTokens,
   getAccessToken,
   getFlowAccessToken,
+  loadTokenCache,
+  normalizeTokens,
   saveFlowTokens,
-  createTestTokens
+  saveTokenCache
 };
