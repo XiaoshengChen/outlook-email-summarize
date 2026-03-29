@@ -1,0 +1,54 @@
+{
+  "id": "outlook-email-summarize",
+  "name": "Outlook Email Summarize",
+  "description": "Safe Outlook inbox summarizer for OpenClaw-China using a bridged MCP server.",
+  "version": "2.0.0",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "clientId": {
+        "type": "string",
+        "minLength": 1
+      },
+      "tenantId": {
+        "type": "string",
+        "default": "common"
+      },
+      "authMode": {
+        "type": "string",
+        "enum": [
+          "device_code",
+          "auth_code_loopback"
+        ],
+        "default": "device_code"
+      },
+      "readOnlyMode": {
+        "type": "boolean",
+        "default": true
+      }
+    },
+    "required": [
+      "clientId"
+    ]
+  },
+  "uiHints": {
+    "clientId": {
+      "label": "Microsoft Client ID",
+      "placeholder": "Application (client) ID"
+    },
+    "tenantId": {
+      "label": "Tenant ID",
+      "placeholder": "common"
+    },
+    "authMode": {
+      "label": "Auth Mode"
+    },
+    "readOnlyMode": {
+      "label": "Read-only Mode"
+    }
+  },
+  "skills": [
+    "skills"
+  ]
+}

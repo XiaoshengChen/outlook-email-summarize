@@ -85,7 +85,45 @@ USE_TEST_MODE=false
 
 Legacy `MS_*` env vars are still accepted for compatibility.
 
-## OpenClaw Example
+## OpenClaw-China Native Plugin
+
+This fork now ships two layers:
+
+- the standalone MCP server in [`index.js`](./index.js)
+- a native OpenClaw plugin wrapper in [`openclaw-extension.js`](./openclaw-extension.js)
+
+For `openclaw-china`, the native wrapper is the correct install shape. Do not jam this repo into root-level `mcpServers` on that build.
+
+Install it as a plugin package, then configure `plugins.entries.outlook-email-summarize.config`.
+
+```json
+{
+  "plugins": {
+    "entries": {
+      "outlook-email-summarize": {
+        "enabled": true,
+        "config": {
+          "clientId": "your-client-id",
+          "tenantId": "common",
+          "authMode": "device_code",
+          "readOnlyMode": true
+        }
+      }
+    }
+  }
+}
+```
+
+The native wrapper only registers the safe Outlook read tools:
+
+- `about`
+- `authenticate`
+- `check-auth-status`
+- `list-emails`
+- `search-emails`
+- `read-email`
+
+## Standalone MCP Example
 
 ```json
 {
