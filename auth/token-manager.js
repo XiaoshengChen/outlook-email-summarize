@@ -2,9 +2,12 @@
  * Token management for Microsoft Graph API authentication
  */
 const fs = require('fs');
+const https = require('https');
+const querystring = require('querystring');
 const config = require('../config');
 
 let cachedTokens = null;
+let refreshPromise = null;
 
 function normalizeTokens(tokens) {
   if (!tokens || !tokens.access_token) {
@@ -37,7 +40,7 @@ function writeJsonFile(filePath, payload) {
  * Loads authentication tokens from the token file
  * @returns {object|null} - The loaded tokens or null if not available
  */
-function loadTokenCache() {
+function readStoredTokens() {
   try {
     const tokenPath = config.AUTH_CONFIG.tokenStorePath;
     if (!fs.existsSync(tokenPath)) {
@@ -45,21 +48,29 @@ function loadTokenCache() {
     }
 
     const tokenData = fs.readFileSync(tokenPath, 'utf8');
-    const tokens = normalizeTokens(JSON.parse(tokenData));
-    if (!tokens) {
-      return null;
-    }
-
-    if (Date.now() >= tokens.expires_at) {
-      return null;
-    }
-
-    cachedTokens = tokens;
-    return tokens;
+    return normalizeTokens(JSON.parse(tokenData));
   } catch (error) {
     console.error('Error loading token cache:', error.message);
     return null;
   }
+}
+
+/**
+ * Loads authentication tokens from the token file
+ * @returns {object|null} - The loaded tokens or null if not available
+ */
+function loadTokenCache() {
+  const tokens = readStoredTokens();
+  if (!tokens) {
+    return null;
+  }
+
+  if (Date.now() >= tokens.expires_at) {
+    return null;
+  }
+
+  cachedTokens = tokens;
+  return tokens;
 }
 
 /**
@@ -85,6 +96,7 @@ function saveTokenCache(tokens) {
 
 function clearTokenCache() {
   cachedTokens = null;
+  refreshPromise = null;
 
   try {
     if (fs.existsSync(config.AUTH_CONFIG.tokenStorePath)) {
@@ -96,16 +108,35 @@ function clearTokenCache() {
 }
 
 /**
- * Gets the current Graph API access token, loading from cache if necessary
+ * Gets the current Graph API access token, refreshing it if needed
  * @returns {string|null} - The access token or null if not available
  */
-function getAccessToken() {
+async function getAccessToken() {
   if (cachedTokens && cachedTokens.access_token && Date.now() < cachedTokens.expires_at) {
     return cachedTokens.access_token;
   }
 
-  const tokens = loadTokenCache();
-  return tokens ? tokens.access_token : null;
+  const storedTokens = readStoredTokens();
+  if (!storedTokens) {
+    return null;
+  }
+
+  cachedTokens = storedTokens;
+  if (Date.now() < storedTokens.expires_at) {
+    return storedTokens.access_token;
+  }
+
+  if (!storedTokens.refresh_token) {
+    return null;
+  }
+
+  try {
+    const refreshedTokens = await refreshAccessToken(storedTokens);
+    return refreshedTokens ? refreshedTokens.access_token : null;
+  } catch (error) {
+    console.error('Error refreshing access token:', error.message);
+    return null;
+  }
 }
 
 /**
@@ -121,6 +152,84 @@ function getFlowAccessToken() {
   }
 
   return null;
+}
+
+function refreshAccessToken(existingTokens) {
+  if (!existingTokens || !existingTokens.refresh_token) {
+    return Promise.resolve(null);
+  }
+
+  if (refreshPromise) {
+    return refreshPromise;
+  }
+
+  const payload = {
+    client_id: config.AUTH_CONFIG.clientId,
+    grant_type: 'refresh_token',
+    refresh_token: existingTokens.refresh_token,
+    scope: config.AUTH_CONFIG.scopes.join(' ')
+  };
+
+  if (config.AUTH_CONFIG.clientSecret) {
+    payload.client_secret = config.AUTH_CONFIG.clientSecret;
+  }
+
+  const body = querystring.stringify(payload);
+
+  refreshPromise = new Promise((resolve, reject) => {
+    const request = https.request(config.AUTH_CONFIG.tokenEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(body)
+      }
+    }, (response) => {
+      let data = '';
+
+      response.on('data', (chunk) => {
+        data += chunk;
+      });
+
+      response.on('end', () => {
+        try {
+          const parsed = JSON.parse(data);
+          if (response.statusCode < 200 || response.statusCode >= 300) {
+            reject(new Error(parsed.error_description || 'Token refresh failed.'));
+            return;
+          }
+
+          const mergedTokens = {
+            ...existingTokens,
+            ...parsed,
+            refresh_token: parsed.refresh_token || existingTokens.refresh_token,
+            expires_at: parsed.expires_at || (
+              typeof parsed.expires_in === 'number'
+                ? Date.now() + (parsed.expires_in * 1000)
+                : existingTokens.expires_at
+            )
+          };
+
+          const saved = saveTokenCache(mergedTokens);
+          if (!saved) {
+            reject(new Error('Token refresh succeeded, but saving the refreshed token cache failed.'));
+            return;
+          }
+
+          resolve(cachedTokens);
+        } catch (error) {
+          reject(new Error(`Failed to parse Microsoft refresh response: ${error.message}`));
+        }
+      });
+    });
+
+    request.on('error', reject);
+    request.write(body);
+    request.end();
+  }).finally(() => {
+    refreshPromise = null;
+  });
+
+  return refreshPromise;
 }
 
 /**
@@ -169,6 +278,7 @@ module.exports = {
   getFlowAccessToken,
   loadTokenCache,
   normalizeTokens,
+  refreshAccessToken,
   saveFlowTokens,
   saveTokenCache
 };

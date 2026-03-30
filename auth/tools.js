@@ -133,7 +133,7 @@ async function handleAuthenticate(args) {
     };
   }
 
-  const existingToken = tokenManager.getAccessToken();
+  const existingToken = await tokenManager.getAccessToken();
   if (existingToken && !force) {
     return {
       content: [{
