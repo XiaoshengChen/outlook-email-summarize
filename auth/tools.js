@@ -1,18 +1,92 @@
 /**
  * Authentication-related tools for the Outlook MCP server
  */
+const fs = require('fs');
+const path = require('path');
 const config = require('../config');
 const tokenManager = require('./token-manager');
 const { pollDeviceCodeToken, requestDeviceCode } = require('./device-code');
 
-let pendingDeviceAuth = null;
+const PENDING_DEVICE_AUTH_PATH = path.join(
+  path.dirname(config.AUTH_CONFIG.tokenStorePath),
+  '.outlook-mcp-pending-device-auth.json'
+);
+
+function writeJsonFile(filePath, payload) {
+  fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), { mode: 0o600 });
+
+  try {
+    fs.chmodSync(filePath, 0o600);
+  } catch (error) {
+    // Windows may ignore chmod semantics. That is fine.
+  }
+}
+
+function clearPendingDeviceAuth() {
+  pendingDeviceAuth = null;
+
+  try {
+    if (fs.existsSync(PENDING_DEVICE_AUTH_PATH)) {
+      fs.unlinkSync(PENDING_DEVICE_AUTH_PATH);
+    }
+  } catch (error) {
+    console.error('Error clearing pending device auth:', error.message);
+  }
+}
+
+function loadPendingDeviceAuth() {
+  try {
+    if (!fs.existsSync(PENDING_DEVICE_AUTH_PATH)) {
+      return null;
+    }
+
+    const payload = JSON.parse(fs.readFileSync(PENDING_DEVICE_AUTH_PATH, 'utf8'));
+    if (!payload || !payload.device_code || !payload.user_code || !payload.verification_uri || !payload.expiresAt) {
+      clearPendingDeviceAuth();
+      return null;
+    }
+
+    if (payload.expiresAt <= Date.now()) {
+      clearPendingDeviceAuth();
+      return null;
+    }
+
+    return payload;
+  } catch (error) {
+    console.error('Error loading pending device auth:', error.message);
+    clearPendingDeviceAuth();
+    return null;
+  }
+}
+
+function savePendingDeviceAuth(payload) {
+  try {
+    writeJsonFile(PENDING_DEVICE_AUTH_PATH, payload);
+    pendingDeviceAuth = payload;
+    return true;
+  } catch (error) {
+    console.error('Error saving pending device auth:', error.message);
+    return false;
+  }
+}
+
+function getPendingDeviceAuth() {
+  if (pendingDeviceAuth && pendingDeviceAuth.expiresAt > Date.now()) {
+    return pendingDeviceAuth;
+  }
+
+  pendingDeviceAuth = loadPendingDeviceAuth();
+  return pendingDeviceAuth;
+}
+
+let pendingDeviceAuth = loadPendingDeviceAuth();
 
 function formatDeviceCodeMessage(deviceAuth) {
   return [
     'Device code authentication started.',
     `1. Open ${deviceAuth.verification_uri}`,
     `2. Enter code: ${deviceAuth.user_code}`,
-    '3. After approving access, run the authenticate tool again to complete sign-in.'
+    '3. After approving access, run authenticate again or check-auth-status to complete sign-in.'
   ].join('\n');
 }
 
@@ -42,7 +116,7 @@ async function handleAuthenticate(args) {
   const force = args && args.force === true;
 
   if (force) {
-    pendingDeviceAuth = null;
+    clearPendingDeviceAuth();
     tokenManager.clearTokenCache();
   }
   
@@ -99,17 +173,19 @@ async function handleAuthenticate(args) {
   }
 
   const now = Date.now();
-  if (!pendingDeviceAuth || pendingDeviceAuth.expiresAt <= now) {
+  const activePendingAuth = getPendingDeviceAuth();
+  if (!activePendingAuth || activePendingAuth.expiresAt <= now) {
     const deviceAuth = await requestDeviceCode({
       clientId: config.AUTH_CONFIG.clientId,
       scopes: config.AUTH_CONFIG.scopes,
       deviceCodeEndpoint: config.AUTH_CONFIG.deviceCodeEndpoint
     });
 
-    pendingDeviceAuth = {
+    const nextPendingAuth = {
       ...deviceAuth,
       expiresAt: now + (deviceAuth.expires_in * 1000)
     };
+    savePendingDeviceAuth(nextPendingAuth);
 
     return {
       content: [{
@@ -121,7 +197,7 @@ async function handleAuthenticate(args) {
 
   const pollResult = await pollDeviceCodeToken({
     clientId: config.AUTH_CONFIG.clientId,
-    deviceCode: pendingDeviceAuth.device_code,
+    deviceCode: activePendingAuth.device_code,
     tokenEndpoint: config.AUTH_CONFIG.tokenEndpoint
   });
 
@@ -135,7 +211,7 @@ async function handleAuthenticate(args) {
   }
 
   if (pollResult.status === 'failed') {
-    pendingDeviceAuth = null;
+    clearPendingDeviceAuth();
     return {
       content: [{
         type: 'text',
@@ -145,7 +221,7 @@ async function handleAuthenticate(args) {
   }
 
   const saved = tokenManager.saveTokenCache(pollResult.tokens);
-  pendingDeviceAuth = null;
+  clearPendingDeviceAuth();
   if (!saved) {
     throw new Error('Authentication succeeded, but saving tokens failed.');
   }
@@ -166,11 +242,45 @@ async function handleCheckAuthStatus() {
   const tokens = tokenManager.loadTokenCache();
 
   if (!tokens || !tokens.access_token) {
-    if (pendingDeviceAuth && pendingDeviceAuth.expiresAt > Date.now()) {
+    const activePendingAuth = getPendingDeviceAuth();
+    if (activePendingAuth) {
+      const pollResult = await pollDeviceCodeToken({
+        clientId: config.AUTH_CONFIG.clientId,
+        deviceCode: activePendingAuth.device_code,
+        tokenEndpoint: config.AUTH_CONFIG.tokenEndpoint
+      });
+
+      if (pollResult.status === 'authorized') {
+        const saved = tokenManager.saveTokenCache(pollResult.tokens);
+        clearPendingDeviceAuth();
+
+        if (!saved) {
+          throw new Error('Authentication succeeded, but saving tokens failed.');
+        }
+
+        const refreshedTokens = tokenManager.loadTokenCache();
+        return {
+          content: [{
+            type: 'text',
+            text: `Authenticated and ready. Token expires at ${new Date(refreshedTokens.expires_at).toISOString()}.`
+          }]
+        };
+      }
+
+      if (pollResult.status === 'failed') {
+        clearPendingDeviceAuth();
+        return {
+          content: [{
+            type: 'text',
+            text: `Not authenticated. Device code authorization ${pollResult.error || 'failed'} and must be restarted.`
+          }]
+        };
+      }
+
       return {
         content: [{
           type: 'text',
-          text: `Authentication pending. Open ${pendingDeviceAuth.verification_uri}, enter code ${pendingDeviceAuth.user_code}, approve access, then run authenticate again.`
+          text: `Authentication pending. Open ${activePendingAuth.verification_uri}, enter code ${activePendingAuth.user_code}, approve access, then run authenticate again or check-auth-status.`
         }]
       };
     }
