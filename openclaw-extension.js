@@ -1,3 +1,6 @@
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { authTools } = require('./auth');
 const { emailTools } = require('./email');
 const { READ_ONLY_SAFE_TOOLS } = require('./utils/feature-gates');
@@ -32,14 +35,43 @@ const configSchema = {
   required: ['clientId']
 };
 
-function resolveToolConfig(ctx = {}) {
+function readConfigFileFallback() {
+  const homeDir = process.env.HOME || process.env.USERPROFILE || os.homedir();
+  const configPath = process.env.OPENCLAW_CONFIG_PATH || path.join(homeDir, '.openclaw', 'openclaw.json');
+
+  try {
+    if (!configPath || !fs.existsSync(configPath)) {
+      return {};
+    }
+
+    const raw = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    return raw?.plugins?.entries?.['outlook-email-summarize']?.config || {};
+  } catch {
+    return {};
+  }
+}
+
+function resolveToolConfig(...contexts) {
+  for (const ctx of contexts) {
+    if (!ctx || typeof ctx !== 'object') {
+      continue;
+    }
+
+    const config = (
+      ctx.config ||
+      ctx.pluginConfig ||
+      ctx.entry?.config ||
+      ctx.plugin?.config ||
+      ctx.extension?.config
+    );
+
+    if (config && Object.keys(config).length > 0) {
+      return config;
+    }
+  }
+
   return (
-    ctx.config ||
-    ctx.pluginConfig ||
-    ctx.entry?.config ||
-    ctx.plugin?.config ||
-    ctx.extension?.config ||
-    {}
+    readConfigFileFallback()
   );
 }
 
@@ -48,8 +80,8 @@ function createToolFactory(tool) {
     name: tool.name,
     description: tool.description,
     parameters: tool.inputSchema,
-    async execute(_id, params = {}) {
-      return callServerTool(resolveToolConfig(ctx), tool.name, params);
+    async execute(_id, params = {}, runtimeCtx = {}) {
+      return callServerTool(resolveToolConfig(runtimeCtx, ctx), tool.name, params);
     }
   });
 }
@@ -78,4 +110,5 @@ const pluginEntry = {
 
 module.exports = pluginEntry;
 module.exports.default = pluginEntry;
+module.exports.readConfigFileFallback = readConfigFileFallback;
 module.exports.resolveToolConfig = resolveToolConfig;

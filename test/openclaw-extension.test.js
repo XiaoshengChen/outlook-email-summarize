@@ -7,10 +7,20 @@ jest.mock('../plugin/mcp-bridge', () => ({
 
 const { callServerTool, stopAllSessions } = require('../plugin/mcp-bridge');
 const plugin = require('../openclaw-extension');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 
 describe('openclaw native extension wrapper', () => {
+  const originalEnv = process.env;
+
   beforeEach(() => {
     jest.clearAllMocks();
+    process.env = { ...originalEnv };
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
   });
 
   test('exports a native plugin entry with a register function', () => {
@@ -87,6 +97,76 @@ describe('openclaw native extension wrapper', () => {
     expect(callServerTool).toHaveBeenCalledWith(
       {
         clientId: 'client-from-plugin',
+        tenantId: 'common',
+        authMode: 'device_code',
+        readOnlyMode: true
+      },
+      'search-emails',
+      { from: 'Matt Levine', count: 1 }
+    );
+  });
+
+  test('tool execution accepts runtime context config passed to execute', async () => {
+    const api = {
+      registerTool: jest.fn(),
+      registerService: jest.fn()
+    };
+
+    plugin.register(api);
+
+    const searchFactory = api.registerTool.mock.calls[4][0];
+    const searchTool = searchFactory({});
+
+    await searchTool.execute(
+      'tool-call-3',
+      { from: 'Matt Levine', count: 1 },
+      { plugin: { config: { clientId: 'runtime-client', tenantId: 'common' } } }
+    );
+
+    expect(callServerTool).toHaveBeenCalledWith(
+      { clientId: 'runtime-client', tenantId: 'common' },
+      'search-emails',
+      { from: 'Matt Levine', count: 1 }
+    );
+  });
+
+  test('tool execution falls back to openclaw config file when host context is empty', async () => {
+    const api = {
+      registerTool: jest.fn(),
+      registerService: jest.fn()
+    };
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openclaw-plugin-test-'));
+    const configPath = path.join(tempDir, 'openclaw.json');
+
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        plugins: {
+          entries: {
+            'outlook-email-summarize': {
+              config: {
+                clientId: 'client-from-file',
+                tenantId: 'common',
+                authMode: 'device_code',
+                readOnlyMode: true
+              }
+            }
+          }
+        }
+      })
+    );
+    process.env.OPENCLAW_CONFIG_PATH = configPath;
+
+    plugin.register(api);
+
+    const searchFactory = api.registerTool.mock.calls[4][0];
+    const searchTool = searchFactory({});
+
+    await searchTool.execute('tool-call-4', { from: 'Matt Levine', count: 1 });
+
+    expect(callServerTool).toHaveBeenCalledWith(
+      {
+        clientId: 'client-from-file',
         tenantId: 'common',
         authMode: 'device_code',
         readOnlyMode: true
