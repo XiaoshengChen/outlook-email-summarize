@@ -48,6 +48,7 @@ const configuredScopes = parseScopes(
   process.env.OUTLOOK_SCOPES || process.env.MS_SCOPES,
   defaultScopes
 );
+const resolvedClientId = process.env.OUTLOOK_CLIENT_ID || process.env.MS_CLIENT_ID || '';
 
 module.exports = {
   // Server information
@@ -62,7 +63,7 @@ module.exports = {
   
   // Authentication configuration
   AUTH_CONFIG: {
-    clientId: process.env.OUTLOOK_CLIENT_ID || process.env.MS_CLIENT_ID || '',
+    clientId: resolvedClientId,
     clientSecret: process.env.OUTLOOK_CLIENT_SECRET || process.env.MS_CLIENT_SECRET || '',
     redirectUri: process.env.OUTLOOK_REDIRECT_URI || process.env.MS_REDIRECT_URI || `http://${AUTH_HOST}:${AUTH_PORT}/auth/callback`,
     scopes: configuredScopes,
@@ -103,3 +104,13 @@ module.exports = {
   FLOW_API_ENDPOINT: 'https://api.flow.microsoft.com',
   FLOW_SCOPE: 'https://service.flow.microsoft.com/.default',
 };
+
+console.error(
+  `[outlook-email-summarize config] authSummary=${JSON.stringify({
+    hasClientId: Boolean(resolvedClientId),
+    clientIdLength: resolvedClientId.length,
+    tenantId: TENANT_ID,
+    authMode: AUTH_MODE,
+    readOnlyMode: READ_ONLY_MODE
+  })}`
+);

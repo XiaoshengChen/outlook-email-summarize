@@ -22,14 +22,19 @@ function normalizePluginConfig(rawConfig = {}) {
 
 function buildServerEnv(rawConfig = {}) {
   const config = normalizePluginConfig(rawConfig);
-
-  return {
+  const env = {
     ...process.env,
     OUTLOOK_CLIENT_ID: config.clientId,
     OUTLOOK_TENANT_ID: config.tenantId,
     OUTLOOK_AUTH_MODE: config.authMode,
     OUTLOOK_READ_ONLY_MODE: String(config.readOnlyMode)
   };
+
+  console.error(
+    `[outlook-email-summarize bridge] buildServerEnv hasClientId=${Boolean(config.clientId)} clientIdLength=${config.clientId.length} tenantId=${config.tenantId} authMode=${config.authMode} readOnlyMode=${config.readOnlyMode}`
+  );
+
+  return env;
 }
 
 function buildConfigKey(rawConfig = {}) {
@@ -38,6 +43,15 @@ function buildConfigKey(rawConfig = {}) {
 
 async function createBridgeSession(rawConfig = {}) {
   const env = buildServerEnv(rawConfig);
+  console.error(
+    `[outlook-email-summarize bridge] createBridgeSession envSummary=${JSON.stringify({
+      hasClientId: Boolean(env.OUTLOOK_CLIENT_ID),
+      clientIdLength: String(env.OUTLOOK_CLIENT_ID || '').length,
+      tenantId: env.OUTLOOK_TENANT_ID || '',
+      authMode: env.OUTLOOK_AUTH_MODE || '',
+      readOnlyMode: env.OUTLOOK_READ_ONLY_MODE || ''
+    })}`
+  );
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [SERVER_ENTRY],

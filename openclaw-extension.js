@@ -35,6 +35,18 @@ const configSchema = {
   required: ['clientId']
 };
 
+function summarizeConfigForLogs(config = {}) {
+  const clientId = typeof config.clientId === 'string' ? config.clientId : '';
+
+  return {
+    hasClientId: clientId.length > 0,
+    clientIdLength: clientId.length,
+    tenantId: config.tenantId || '',
+    authMode: config.authMode || '',
+    readOnlyMode: config.readOnlyMode
+  };
+}
+
 function readConfigFileFallback() {
   const homeDir = process.env.HOME || process.env.USERPROFILE || os.homedir();
   const configPath = process.env.OPENCLAW_CONFIG_PATH || path.join(homeDir, '.openclaw', 'openclaw.json');
@@ -45,34 +57,46 @@ function readConfigFileFallback() {
     }
 
     const raw = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    return raw?.plugins?.entries?.['outlook-email-summarize']?.config || {};
+    const fallbackConfig = raw?.plugins?.entries?.['outlook-email-summarize']?.config || {};
+    console.error(
+      `[outlook-email-summarize plugin] readConfigFileFallback path=${configPath} summary=${JSON.stringify(summarizeConfigForLogs(fallbackConfig))}`
+    );
+    return fallbackConfig;
   } catch {
     return {};
   }
 }
 
 function resolveToolConfig(...contexts) {
+  const candidates = [
+    ['ctx.config', (ctx) => ctx.config],
+    ['ctx.pluginConfig', (ctx) => ctx.pluginConfig],
+    ['ctx.entry.config', (ctx) => ctx.entry?.config],
+    ['ctx.plugin.config', (ctx) => ctx.plugin?.config],
+    ['ctx.extension.config', (ctx) => ctx.extension?.config]
+  ];
+
   for (const ctx of contexts) {
     if (!ctx || typeof ctx !== 'object') {
       continue;
     }
 
-    const config = (
-      ctx.config ||
-      ctx.pluginConfig ||
-      ctx.entry?.config ||
-      ctx.plugin?.config ||
-      ctx.extension?.config
-    );
-
-    if (config && Object.keys(config).length > 0) {
-      return config;
+    for (const [source, getter] of candidates) {
+      const config = getter(ctx);
+      if (config && Object.keys(config).length > 0) {
+        console.error(
+          `[outlook-email-summarize plugin] resolveToolConfig source=${source} summary=${JSON.stringify(summarizeConfigForLogs(config))}`
+        );
+        return config;
+      }
     }
   }
 
-  return (
-    readConfigFileFallback()
+  const fallbackConfig = readConfigFileFallback();
+  console.error(
+    `[outlook-email-summarize plugin] resolveToolConfig source=file-fallback summary=${JSON.stringify(summarizeConfigForLogs(fallbackConfig))}`
   );
+  return fallbackConfig;
 }
 
 function createToolFactory(tool) {
