@@ -175,4 +175,56 @@ describe('openclaw native extension wrapper', () => {
       { from: 'Matt Levine', count: 1 }
     );
   });
+
+  test('tool execution ignores empty ctx.config and continues to file fallback', async () => {
+    const api = {
+      registerTool: jest.fn(),
+      registerService: jest.fn()
+    };
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openclaw-plugin-test-empty-'));
+    const configPath = path.join(tempDir, 'openclaw.json');
+
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        plugins: {
+          entries: {
+            'outlook-email-summarize': {
+              config: {
+                clientId: 'client-from-fallback',
+                tenantId: 'common',
+                authMode: 'device_code',
+                readOnlyMode: true
+              }
+            }
+          }
+        }
+      })
+    );
+    process.env.OPENCLAW_CONFIG_PATH = configPath;
+
+    plugin.register(api);
+
+    const searchFactory = api.registerTool.mock.calls[4][0];
+    const searchTool = searchFactory({
+      config: {
+        clientId: '',
+        tenantId: '',
+        authMode: ''
+      }
+    });
+
+    await searchTool.execute('tool-call-5', { from: 'Matt Levine', count: 1 });
+
+    expect(callServerTool).toHaveBeenCalledWith(
+      {
+        clientId: 'client-from-fallback',
+        tenantId: 'common',
+        authMode: 'device_code',
+        readOnlyMode: true
+      },
+      'search-emails',
+      { from: 'Matt Levine', count: 1 }
+    );
+  });
 });

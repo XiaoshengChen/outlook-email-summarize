@@ -47,6 +47,14 @@ function summarizeConfigForLogs(config = {}) {
   };
 }
 
+function hasUsableClientId(config) {
+  return Boolean(
+    config &&
+    typeof config.clientId === 'string' &&
+    config.clientId.trim().length > 0
+  );
+}
+
 function readConfigFileFallback() {
   const homeDir = process.env.HOME || process.env.USERPROFILE || os.homedir();
   const configPath = process.env.OPENCLAW_CONFIG_PATH || path.join(homeDir, '.openclaw', 'openclaw.json');
@@ -83,7 +91,7 @@ function resolveToolConfig(...contexts) {
 
     for (const [source, getter] of candidates) {
       const config = getter(ctx);
-      if (config && Object.keys(config).length > 0) {
+      if (hasUsableClientId(config)) {
         console.error(
           `[outlook-email-summarize plugin] resolveToolConfig source=${source} summary=${JSON.stringify(summarizeConfigForLogs(config))}`
         );
@@ -134,5 +142,6 @@ const pluginEntry = {
 
 module.exports = pluginEntry;
 module.exports.default = pluginEntry;
+module.exports.hasUsableClientId = hasUsableClientId;
 module.exports.readConfigFileFallback = readConfigFileFallback;
 module.exports.resolveToolConfig = resolveToolConfig;
