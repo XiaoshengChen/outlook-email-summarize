@@ -24,6 +24,7 @@ function buildServerEnv(rawConfig = {}) {
   const config = normalizePluginConfig(rawConfig);
 
   return {
+    ...process.env,
     OUTLOOK_CLIENT_ID: config.clientId,
     OUTLOOK_TENANT_ID: config.tenantId,
     OUTLOOK_AUTH_MODE: config.authMode,

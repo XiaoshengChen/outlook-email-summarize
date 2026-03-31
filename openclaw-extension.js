@@ -32,13 +32,24 @@ const configSchema = {
   required: ['clientId']
 };
 
+function resolveToolConfig(ctx = {}) {
+  return (
+    ctx.config ||
+    ctx.pluginConfig ||
+    ctx.entry?.config ||
+    ctx.plugin?.config ||
+    ctx.extension?.config ||
+    {}
+  );
+}
+
 function createToolFactory(tool) {
   return (ctx = {}) => ({
     name: tool.name,
     description: tool.description,
     parameters: tool.inputSchema,
     async execute(_id, params = {}) {
-      return callServerTool(ctx.config || {}, tool.name, params);
+      return callServerTool(resolveToolConfig(ctx), tool.name, params);
     }
   });
 }
@@ -67,3 +78,4 @@ const pluginEntry = {
 
 module.exports = pluginEntry;
 module.exports.default = pluginEntry;
+module.exports.resolveToolConfig = resolveToolConfig;

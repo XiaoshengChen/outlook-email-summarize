@@ -1,6 +1,16 @@
 const { buildServerEnv, normalizePluginConfig } = require('../../plugin/mcp-bridge');
 
 describe('mcp bridge config mapping', () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    process.env = { ...originalEnv, PATH: originalEnv.PATH, EXISTING_FLAG: 'keep-me' };
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
   test('normalizes native plugin config to safe defaults', () => {
     expect(normalizePluginConfig({ clientId: 'abc' })).toEqual({
       clientId: 'abc',
@@ -24,6 +34,18 @@ describe('mcp bridge config mapping', () => {
         OUTLOOK_TENANT_ID: 'organizations',
         OUTLOOK_AUTH_MODE: 'auth_code_loopback',
         OUTLOOK_READ_ONLY_MODE: 'false'
+      })
+    );
+  });
+
+  test('builds child-process env without discarding existing process env', () => {
+    const env = buildServerEnv({ clientId: 'abc' });
+
+    expect(env).toEqual(
+      expect.objectContaining({
+        EXISTING_FLAG: 'keep-me',
+        PATH: originalEnv.PATH,
+        OUTLOOK_CLIENT_ID: 'abc'
       })
     );
   });

@@ -61,4 +61,38 @@ describe('openclaw native extension wrapper', () => {
 
     expect(stopAllSessions).toHaveBeenCalledTimes(1);
   });
+
+  test('tool execution falls back to plugin-level config when ctx.config is missing', async () => {
+    const api = {
+      registerTool: jest.fn(),
+      registerService: jest.fn()
+    };
+
+    plugin.register(api);
+
+    const searchFactory = api.registerTool.mock.calls[4][0];
+    const searchTool = searchFactory({
+      plugin: {
+        config: {
+          clientId: 'client-from-plugin',
+          tenantId: 'common',
+          authMode: 'device_code',
+          readOnlyMode: true
+        }
+      }
+    });
+
+    await searchTool.execute('tool-call-2', { from: 'Matt Levine', count: 1 });
+
+    expect(callServerTool).toHaveBeenCalledWith(
+      {
+        clientId: 'client-from-plugin',
+        tenantId: 'common',
+        authMode: 'device_code',
+        readOnlyMode: true
+      },
+      'search-emails',
+      { from: 'Matt Levine', count: 1 }
+    );
+  });
 });
