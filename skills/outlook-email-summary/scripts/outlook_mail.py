@@ -14,7 +14,10 @@ from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
 # ── Config ──────────────────────────────────────────────────────────
-CLIENT_ID = os.environ.get("OUTLOOK_CLIENT_ID", "d5528cfe-2645-4ab8-92c2-70195aaacf9c")
+CLIENT_ID = os.environ.get("OUTLOOK_CLIENT_ID", "")
+if not CLIENT_ID:
+    print("[outlook] ERROR: OUTLOOK_CLIENT_ID environment variable is required. Set it in ~/.hermes/.env or your shell profile.", file=sys.stderr)
+    sys.exit(1)
 TENANT_ID = "common"  # personal outlook.com accounts
 TOKEN_PATH = Path.home() / ".outlook-mcp-tokens.json"
 PENDING_AUTH_PATH = Path.home() / ".outlook-mcp-pending-device-auth.json"
