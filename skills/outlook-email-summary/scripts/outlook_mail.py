@@ -247,8 +247,10 @@ def fetch_email_body(access_token, email_id):
     params = {
         "$select": "id,subject,body",
     }
+    # Graph API requires URL encoding for email IDs containing special chars (=, +, etc.)
+    encoded_id = urllib.parse.quote(email_id, safe='')
     try:
-        response = graph_get(access_token, f"me/messages/{email_id}", params)
+        response = graph_get(access_token, f"me/messages/{encoded_id}", params)
         body = response.get("body", {})
         content = body.get("content", "")
         content_type = body.get("contentType", "text")
